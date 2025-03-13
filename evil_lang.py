@@ -293,6 +293,24 @@ class String(AST):
         self.value = token.value
 
 
+class Boolean(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value == 'TRUE'  # 将 'TRUE' 字符串转换为 Python 的 True
+
+
+class Null(AST):
+    def __init__(self, token):
+        self.token = token
+        self.value = None
+
+
+class PropertyAccess(AST):
+    def __init__(self, obj, prop):
+        self.obj = obj  # 要访问的对象
+        self.prop = prop  # 属性名称
+
+
 class Compound(AST):
     def __init__(self):
         self.children = []
@@ -872,11 +890,15 @@ class Parser:
                | '!'  factor
                | NUMBER
                | STRING
+               | BOOLEAN
+               | NULL
                | LPAREN expr RPAREN
                | array_literal
                | input_func_call
                | func_call
-               | variable ('['expr']')?
+               | variable property_access*
+
+        property_access : '.' IDENTIFIER
         """
         if self.debug_mode:
             print(f"Parsing factor, current token: {self.current_token}")
@@ -902,6 +924,16 @@ class Parser:
         elif token.type == TokenType.STRING:
             self.eat(TokenType.STRING)
             return String(token)
+
+        # 处理布尔值关键字
+        elif token.type == TokenType.KEYWORD and token.value in ('TRUE', 'FALSE'):
+            self.eat(TokenType.KEYWORD)
+            return Boolean(token)
+
+        # 处理 NULL 关键字
+        elif token.type == TokenType.KEYWORD and token.value == 'NULL':
+            self.eat(TokenType.KEYWORD)
+            return Null(token)
 
         elif token.type == TokenType.LPAREN:
             self.eat(TokenType.LPAREN)
@@ -939,13 +971,38 @@ class Parser:
                 return self.func_call()
 
             elif self.current_token.type == TokenType.LBRACKET:
-                # 这是数组访问
-                self.eat(TokenType.LBRACKET)
-                index = self.expr()
-                self.eat(TokenType.RBRACKET)
+                # 数组访问 - 支持多维数组访问
+                var_node = Var(saved_token)
+                node = var_node
 
-                return ArrayAccess(Var(saved_token), index)
+                # 处理一个或多个方括号索引
+                while self.current_token.type == TokenType.LBRACKET:
+                    self.eat(TokenType.LBRACKET)
+                    index = self.expr()
+                    self.eat(TokenType.RBRACKET)
+                    node = ArrayAccess(node, index)
 
+                # 处理属性访问（在数组访问之后可能有属性访问）
+                while self.current_token.type == TokenType.DOT:
+                    self.eat(TokenType.DOT)
+                    prop_token = self.current_token
+                    self.eat(TokenType.IDENTIFIER)
+                    node = PropertyAccess(node, prop_token.value)
+
+                return node
+            elif self.current_token.type == TokenType.DOT:
+                # 这是属性访问
+                var_node = Var(saved_token)
+                node = var_node
+
+                # 处理属性访问链 (obj.prop1.prop2...)
+                while self.current_token.type == TokenType.DOT:
+                    self.eat(TokenType.DOT)
+                    prop_token = self.current_token
+                    self.eat(TokenType.IDENTIFIER)
+                    node = PropertyAccess(node, prop_token.value)
+
+                return node
             else:
                 # 这是普通变量
                 return Var(saved_token)
@@ -997,10 +1054,10 @@ class Interpreter:
         right = self.visit(node.right)
 
         # 处理字符串连接 - 自动将非字符串值转换为字符串
-        if node.op.value == '+':
-            if isinstance(left, str) or isinstance(right, str):
-                return self._to_string(left) + self._to_string(right)
+        if node.op.value == '+' and (isinstance(left, str) or isinstance(right, str)):
+            return self._to_string(left) + self._to_string(right)
 
+        # 其他二元操作符
         if node.op.value == '+':
             return left + right
         elif node.op.value == '-':
@@ -1040,6 +1097,24 @@ class Interpreter:
 
     def visit_String(self, node):
         return node.value
+
+    def visit_Boolean(self, node):
+        return node.value
+
+    def visit_Null(self, node):
+        return None
+
+    def visit_PropertyAccess(self, node):
+        obj = self.visit(node.obj)
+
+        # 处理内置属性和方法
+        if isinstance(obj, list) and node.prop == 'length':
+            return len(obj)
+        # 还可以添加对象支持，例如:
+        # elif isinstance(obj, dict) and node.prop in obj:
+        #     return obj[node.prop]
+        else:
+            raise Exception(f"无法访问属性 '{node.prop}' 在对象上: {obj}")
 
     def visit_Compound(self, node):
         for child in node.children:
