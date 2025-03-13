@@ -1240,11 +1240,18 @@ class Interpreter:
             if not isinstance(index, int):
                 raise Exception(f"数组索引必须是整数: {index}")
 
-            if index < 0 or index >= len(array):
+            # 修改后的边界检查，允许在数组末尾添加元素
+            if index < 0 or index > len(array):
                 raise Exception(f"数组索引越界: {index}")
 
             value = self.visit(node.right)
-            array[index] = value
+
+            # 如果索引等于数组长度，附加到数组末尾
+            if index == len(array):
+                array.append(value)
+            else:
+                array[index] = value
+
             return value
 
         elif isinstance(node.left, PropertyAccess):
@@ -1361,8 +1368,16 @@ class Interpreter:
         """
         func_name = node.name
 
-        # 准备参数
-        arg_values = [self.visit(arg) for arg in node.arguments]
+        # 准备参数，并处理函数作为参数的情况
+        arg_values = []
+        for arg in node.arguments:
+            arg_value = self.visit(arg)
+
+            # 检查参数是否为函数名，如果是，转换为函数引用
+            if isinstance(arg_value, str) and arg_value in self.functions:
+                arg_value = FuncRef(self.functions[arg_value], self.global_scope.copy())
+
+            arg_values.append(arg_value)
 
         # 检查是不是一个存储为变量的函数引用 (闭包情况)
         if func_name in self.global_scope and isinstance(self.global_scope[func_name], FuncRef):
@@ -1408,51 +1423,17 @@ class Interpreter:
             if len(arg_values) != len(func_node.params):
                 raise Exception(f"函数 {func_name} 需要 {len(func_node.params)} 个参数，但给出了 {len(arg_values)} 个")
 
-            # applyAndPrint特殊处理
-            if func_name == "applyAndPrint" and len(arg_values) == 2:
-                value = arg_values[0]
-                operation_name = arg_values[1]
-
-                # 如果第二个参数是函数名
-                if isinstance(operation_name, str) and operation_name in self.functions:
-                    operation_func = self.functions[operation_name]
-
-                    # 保存当前作用域
-                    saved_scope = self.global_scope.copy()
-
-                    # 检查参数
-                    if len(operation_func.params) != 1:
-                        raise Exception(f"函数 {operation_name} 作为回调时应该只接受一个参数")
-
-                    # 设置参数
-                    param_name = operation_func.params[0].value
-                    self.global_scope[param_name] = value
-
-                    # 执行函数
-                    try:
-                        operation_result = None
-                        self.visit(operation_func.body)
-                    except ReturnException as e:
-                        operation_result = e.value
-                    finally:
-                        # 恢复作用域
-                        self.global_scope = saved_scope
-
-                    # 打印结果并返回
-                    print(operation_result)
-                    return operation_result
-
             # 保存当前作用域
             saved_scope = self.global_scope.copy()
 
             # 创建新的作用域用于函数执行
-            new_scope = {}
+            new_scope = saved_scope.copy()  # 复制当前作用域作为基础
             for i, param in enumerate(func_node.params):
                 param_name = param.value
                 new_scope[param_name] = arg_values[i]
 
-            # 更新全局作用域
-            self.global_scope.update(new_scope)
+            # 设置新作用域
+            self.global_scope = new_scope
 
             # 执行函数体
             return_value = None
@@ -1464,6 +1445,11 @@ class Interpreter:
                 # 如果返回值是一个函数名，将其转换为函数引用
                 if isinstance(return_value, str) and return_value in self.functions:
                     return_value = FuncRef(self.functions[return_value], self.global_scope.copy())
+                # 如果返回值是函数数组，将每个函数名转换为函数引用
+                elif isinstance(return_value, list):
+                    for i, item in enumerate(return_value):
+                        if isinstance(item, str) and item in self.functions:
+                            return_value[i] = FuncRef(self.functions[item], self.global_scope.copy())
             finally:
                 # 恢复原来的作用域
                 self.global_scope = saved_scope
