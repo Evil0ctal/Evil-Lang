@@ -238,7 +238,7 @@ class Lexer:
                 return token
 
             # 操作符
-            if self.current_char in '+-*/=<>!&|':
+            if self.current_char in '+-*/=<>!&|?':  # 添加了 '?' 支持三元运算符
                 column = self.column
                 op = self.current_char
                 self.advance()
@@ -281,6 +281,13 @@ class UnaryOp(AST):
         self.expr = expr
 
 
+class TernaryOp(AST):
+    def __init__(self, condition, true_expr, false_expr):
+        self.condition = condition
+        self.true_expr = true_expr
+        self.false_expr = false_expr
+
+
 class Number(AST):
     def __init__(self, token):
         self.token = token
@@ -303,6 +310,12 @@ class Null(AST):
     def __init__(self, token):
         self.token = token
         self.value = None
+
+
+# 新增: 对象字面量AST节点
+class ObjectLiteral(AST):
+    def __init__(self, pairs):
+        self.pairs = pairs  # 键值对字典
 
 
 class PropertyAccess(AST):
@@ -474,6 +487,7 @@ class Parser:
                   | break_statement
                   | continue_statement
                   | array_assignment
+                  | property_assignment
                   | empty
         """
         if self.debug_mode:
@@ -518,38 +532,16 @@ class Parser:
 
             # 检查标识符后面是什么
             if self.current_token.type == TokenType.LPAREN:
-                # 如果是左括号，这是一个函数调用
-                # 回溯到函数名开始处
+                # 回溯并解析函数调用
                 self.lexer.position = saved_lexer_position
                 self.lexer.line = saved_lexer_line
                 self.lexer.column = saved_lexer_column
                 self.lexer.current_char = saved_lexer_char
                 self.current_token = saved_token
 
-                # 解析函数调用
                 func_call = self.func_call()
                 self.eat(TokenType.SEMICOLON)
                 return func_call
-
-            elif self.current_token.type == TokenType.LBRACKET:
-                # 数组访问和赋值
-                self.eat(TokenType.LBRACKET)
-                index = self.expr()
-                self.eat(TokenType.RBRACKET)
-
-                if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '=':
-                    # 数组元素赋值
-                    op_token = self.current_token
-                    self.eat(TokenType.OPERATOR)  # '='
-                    value = self.expr()
-                    self.eat(TokenType.SEMICOLON)
-
-                    array_node = Var(saved_token)
-                    array_access = ArrayAccess(array_node, index)
-                    return Assign(array_access, op_token, value)
-                else:
-                    self.error(f"Expected assignment operator after array access")
-
             elif self.current_token.type == TokenType.OPERATOR and self.current_token.value == '=':
                 # 变量赋值
                 op_token = self.current_token
@@ -560,7 +552,27 @@ class Parser:
                 var_node = Var(saved_token)
                 return Assign(var_node, op_token, value)
             else:
-                self.error(f"Unexpected token after identifier: {self.current_token}")
+                # 可能是数组访问、属性访问，后跟赋值操作
+                # 回溯，然后使用expr方法解析复杂表达式
+                self.lexer.position = saved_lexer_position
+                self.lexer.line = saved_lexer_line
+                self.lexer.column = saved_lexer_column
+                self.lexer.current_char = saved_lexer_char
+                self.current_token = saved_token
+
+                # 解析左侧表达式
+                left = self.expr()
+
+                # 如果是赋值表达式
+                if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '=':
+                    op_token = self.current_token
+                    self.eat(TokenType.OPERATOR)  # '='
+                    right = self.expr()
+                    self.eat(TokenType.SEMICOLON)
+                    return Assign(left, op_token, right)
+                else:
+                    # 必须是语句，所以应该是赋值
+                    self.error(f"Expected assignment operator in statement context")
 
         elif self.current_token.type == TokenType.SEMICOLON:
             return self.empty()
@@ -820,6 +832,38 @@ class Parser:
 
         return Array(elements)
 
+    # 对象字面量解析方法
+    def object_literal(self):
+        """object_literal : '{' (STRING ':' expr (',' STRING ':' expr)*)? '}'"""
+        self.eat(TokenType.LBRACE)
+        pairs = {}
+
+        if self.current_token.type != TokenType.RBRACE:
+            # 解析第一个键值对
+            if self.current_token.type == TokenType.STRING:
+                key = self.current_token.value
+                self.eat(TokenType.STRING)
+                self.eat(TokenType.COLON)
+                value = self.expr()
+                pairs[key] = value
+
+                # 解析剩余的键值对
+                while self.current_token.type == TokenType.COMMA:
+                    self.eat(TokenType.COMMA)
+                    if self.current_token.type == TokenType.STRING:
+                        key = self.current_token.value
+                        self.eat(TokenType.STRING)
+                        self.eat(TokenType.COLON)
+                        value = self.expr()
+                        pairs[key] = value
+                    else:
+                        self.error(f"对象键必须是字符串，得到了: {self.current_token.type}")
+            else:
+                self.error(f"对象键必须是字符串，得到了: {self.current_token.type}")
+
+        self.eat(TokenType.RBRACE)
+        return ObjectLiteral(pairs)
+
     def empty(self):
         """empty : ';'"""
         self.eat(TokenType.SEMICOLON)
@@ -832,8 +876,21 @@ class Parser:
         return node
 
     def expr(self):
-        """expr : logic_expr"""
-        return self.logic_expr()
+        """expr : logic_expr ('?' expr ':' expr)?"""
+        node = self.logic_expr()
+
+        # 检查是否有三元运算符
+        if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '?':
+            self.eat(TokenType.OPERATOR)  # 吃掉问号
+            true_expr = self.expr()  # 解析问号后面的表达式
+
+            self.eat(TokenType.COLON)  # 吃掉冒号
+            false_expr = self.expr()  # 解析冒号后面的表达式
+
+            # 创建三元运算符节点
+            node = TernaryOp(node, true_expr, false_expr)
+
+        return node
 
     def logic_expr(self):
         """logic_expr : comp_expr (('&&'|'||') comp_expr)*"""
@@ -894,6 +951,7 @@ class Parser:
                | NULL
                | LPAREN expr RPAREN
                | array_literal
+               | object_literal
                | input_func_call
                | func_call
                | variable property_access*
@@ -940,6 +998,10 @@ class Parser:
             node = self.expr()
             self.eat(TokenType.RPAREN)
             return node
+
+        # 处理对象字面量
+        elif token.type == TokenType.LBRACE:
+            return self.object_literal()
 
         elif token.type == TokenType.LBRACKET:
             return self.array_literal()
@@ -1092,6 +1154,13 @@ class Interpreter:
         elif op == '!':
             return not self.visit(node.expr)
 
+    def visit_TernaryOp(self, node):
+        condition = self.visit(node.condition)
+        if condition:
+            return self.visit(node.true_expr)
+        else:
+            return self.visit(node.false_expr)
+
     def visit_Number(self, node):
         return node.value
 
@@ -1104,15 +1173,30 @@ class Interpreter:
     def visit_Null(self, node):
         return None
 
+    # 对象字面量求值方法
+    def visit_ObjectLiteral(self, node):
+        """处理对象字面量，返回一个Python字典"""
+        result = {}
+        for key, value_node in node.pairs.items():
+            result[key] = self.visit(value_node)
+        return result
+
     def visit_PropertyAccess(self, node):
         obj = self.visit(node.obj)
 
         # 处理内置属性和方法
         if isinstance(obj, list) and node.prop == 'length':
             return len(obj)
-        # 还可以添加对象支持，例如:
-        # elif isinstance(obj, dict) and node.prop in obj:
-        #     return obj[node.prop]
+        # 处理对象属性访问
+        elif isinstance(obj, dict) and node.prop in obj:
+            return obj[node.prop]
+        # 如果对象是字典，尝试访问它的键
+        elif isinstance(obj, dict):
+            if node.prop in obj:
+                return obj[node.prop]
+            else:
+                # 如果属性不存在，抛出异常
+                raise Exception(f"对象没有属性 '{node.prop}'")
         else:
             raise Exception(f"无法访问属性 '{node.prop}' 在对象上: {obj}")
 
@@ -1162,6 +1246,19 @@ class Interpreter:
             value = self.visit(node.right)
             array[index] = value
             return value
+
+        elif isinstance(node.left, PropertyAccess):
+            # 处理对象属性赋值
+            obj = self.visit(node.left.obj)
+            prop = node.left.prop
+
+            if isinstance(obj, dict):
+                value = self.visit(node.right)
+                obj[prop] = value
+                return value
+            else:
+                raise Exception(f"无法为非对象类型设置属性: {obj}")
+
         else:
             raise Exception(f"不支持的赋值目标类型: {type(node.left)}")
 
