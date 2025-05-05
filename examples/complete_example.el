@@ -257,11 +257,31 @@ print("\n===== 7. 用户交互 =====");
 var name = input("请输入您的名字: ");
 print("您好, " + name + "!");
 
-// 计算器示例
+// 计算器示例 - 使用内置函数
 var num1 = input("请输入第一个数字: ");
 var num2 = input("请输入第二个数字: ");
-print("两数之和: " + (num1 + num2));  // 注意：这会是字符串拼接，不是数字相加
-print("正确的两数之和: " + add(num1, num2));  // 这里假设add函数会自动转换字符串为数字
+
+// 字符串拼接
+print("两数之和（字符串）: " + (num1 + num2));
+
+// 数字相加
+print("正确的两数之和（数字）: " + numberAdd(num1, num2));
+
+// 数字相减
+print("两数之差: " + numberSub(num1, num2));
+
+// 数字相乘
+print("两数之积: " + numberMul(num1, num2));
+
+// 数字相除
+print("两数之商: " + numberDiv(num1, num2));
+
+// 格式化输出
+print(format("计算结果: {0} + {1} = {2}", num1, num2, numberAdd(num1, num2)));
+
+// 输入数字（自动转换）
+var num3 = inputNumber("请输入第三个数字: ");
+print("第三个数字的类型: " + typeof(num3));  // 如果输入的是数字，这里会显示"number"
 
 // ==================== 8. 综合应用：待办事项管理器 ====================
 print("\n===== 8. 综合应用：待办事项管理器 =====");
