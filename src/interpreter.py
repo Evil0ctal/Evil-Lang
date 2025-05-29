@@ -6,8 +6,9 @@
 
 from .ast import *
 from .errors import EvilLangError, RuntimeError, NameError, TypeError, ValueError, IndexError, ReturnException, \
-    BreakException, ContinueException
+    BreakException, ContinueException, EvilLangException
 from .builtins import get_builtins
+from .class_system import EvilClass, EvilInstance, BoundMethod
 
 
 class Interpreter:
@@ -16,16 +17,20 @@ class Interpreter:
     def __init__(self, source_code=None, filename=None):
         self.global_scope = {}  # Global scope / 全局变量作用域
         self.functions = {}  # Function storage / 函数字典
+        self.classes = {}  # Class storage / 类字典
         self.source_code = source_code  # Store the source code for error reporting
         self.filename = filename  # Store the filename for error reporting
+        self.builtins = {}  # Built-in functions / 内置函数
+        self.module_manager = None  # Module manager / 模块管理器（延迟初始化以避免循环导入）
+        self.current_instance = None  # Current instance for this reference / 当前实例（用于this引用）
 
         # Add built-in functions / 添加内置函数
         self._add_builtins()
 
     def _add_builtins(self):
         """Add built-in functions to global scope / 添加内置函数到全局作用域"""
-        builtins = get_builtins()
-        for name, func in builtins.items():
+        self.builtins = get_builtins()
+        for name, func in self.builtins.items():
             self.global_scope[name] = func
 
     def visit(self, node):
@@ -72,6 +77,10 @@ class Interpreter:
                 if right == 0:
                     raise ValueError("Division by zero", line, column)
                 return left / right
+            elif node.op.value == '%':
+                if right == 0:
+                    raise ValueError("Modulo by zero", line, column)
+                return left % right
             elif node.op.value == '==':
                 return left == right
             elif node.op.value == '!=':
@@ -152,8 +161,17 @@ class Interpreter:
         line = node.obj.token.line if hasattr(node.obj, 'token') else None
         column = node.obj.token.column if hasattr(node.obj, 'token') else None
 
+        # Handle Evil Lang object instances / 处理 Evil Lang 对象实例
+        if isinstance(obj, EvilInstance):
+            value = obj.get(node.prop)
+            if value is None:
+                raise NameError(f"Instance has no property '{node.prop}'", line, column)
+            return value
         # Handle built-in properties and methods / 处理内置属性和方法
-        if isinstance(obj, list) and node.prop == 'length':
+        elif isinstance(obj, list) and node.prop == 'length':
+            return len(obj)
+        # Handle string properties / 处理字符串属性
+        elif isinstance(obj, str) and node.prop == 'length':
             return len(obj)
         # Handle object property access / 处理对象属性访问
         elif isinstance(obj, dict) and node.prop in obj:
@@ -240,6 +258,11 @@ class Interpreter:
             if isinstance(obj, dict):
                 value = self.visit(node.right)
                 obj[prop] = value
+                return value
+            elif isinstance(obj, EvilInstance):
+                # Handle Evil Lang instance property assignment
+                value = self.visit(node.right)
+                obj.set(prop, value)
                 return value
             else:
                 raise TypeError(f"Cannot set property on non-object type", line, column)
@@ -350,6 +373,10 @@ class Interpreter:
         # Create a FuncRef object for the function, supporting later use as a value
         # 把函数本身创建为一个FuncRef对象，支持后续作为值使用
         func_ref = FuncRef(node, closure_env)
+        
+        # Also store function reference in global scope for easier access
+        # 同时将函数引用存储在全局作用域中，方便访问
+        self.global_scope[node.name] = func_ref
 
         # Return function reference, allowing functions to be assigned to variables
         # 返回函数引用，使得函数可以被赋值给变量
@@ -524,7 +551,246 @@ class Interpreter:
     def visit_NoOp(self, node):
         """Execute no-op statement / 执行空操作语句"""
         pass
+    
+    def visit_MethodCall(self, node):
+        """Execute method call / 执行方法调用"""
+        # 获取对象
+        obj = self.visit(node.obj)
+        
+        # 获取方法名
+        method_name = node.method
+        
+        # 准备参数
+        arg_values = []
+        for arg in node.arguments:
+            arg_values.append(self.visit(arg))
+        
+        # 如果对象是 Evil Lang 实例
+        if isinstance(obj, EvilInstance):
+            method = obj.get(method_name)
+            if method is None:
+                raise NameError(f"Instance has no method '{method_name}'")
+            
+            # 如果是绑定方法，调用它
+            if isinstance(method, BoundMethod):
+                return method.call(self, arg_values)
+            else:
+                raise TypeError(f"'{method_name}' is not a callable method")
+        
+        # 如果对象是字典，尝试获取方法
+        elif isinstance(obj, dict) and method_name in obj:
+            method = obj[method_name]
+            
+            # 如果是函数引用，调用它
+            if isinstance(method, FuncRef):
+                func_node = method.func_node
+                
+                # 检查参数数量
+                if len(arg_values) != len(func_node.params):
+                    raise ValueError(
+                        f"Method '{method_name}' requires {len(func_node.params)} arguments, "
+                        f"but {len(arg_values)} were given"
+                    )
+                
+                # 创建新作用域
+                saved_scope = self.global_scope.copy()
+                saved_functions = self.functions.copy()
+                
+                # 创建闭包作用域
+                new_scope = method.lexical_scope.copy() if method.lexical_scope else {}
+                
+                # 绑定参数
+                for i, param in enumerate(func_node.params):
+                    new_scope[param.value] = arg_values[i]
+                
+                # 设置新作用域
+                self.global_scope = new_scope
+                self.functions = saved_functions
+                
+                try:
+                    # 执行函数体
+                    self.visit(func_node.body)
+                    return_value = None
+                except ReturnException as e:
+                    return_value = e.value
+                finally:
+                    # 恢复原作用域
+                    self.global_scope = saved_scope
+                    self.functions = saved_functions
+                
+                return return_value
+            else:
+                raise TypeError(f"'{method_name}' is not a callable method")
+        else:
+            raise NameError(f"Object has no method '{method_name}'")
 
+    def visit_ImportStmt(self, node):
+        """Execute import statement / 执行导入语句"""
+        # 延迟初始化模块管理器
+        if self.module_manager is None:
+            from .module import ModuleManager
+            self.module_manager = ModuleManager(self)
+        
+        # 导入模块
+        imports = self.module_manager.import_module(
+            node.module_path,
+            items=node.items,
+            alias=node.alias,
+            from_path=self.filename
+        )
+        
+        # 将导入的符号添加到当前作用域
+        self.global_scope.update(imports)
+    
+    def visit_ExportStmt(self, node):
+        """Execute export statement / 执行导出语句"""
+        # 如果我们在模块上下文中，初始化导出字典
+        if not hasattr(self, 'module_exports'):
+            self.module_exports = {}
+        
+        # 处理导出项
+        for item in node.items:
+            if item.value:
+                # 这是一个声明导出（export var x = value）
+                # 先执行声明
+                self.visit(item.value)
+                
+                # 获取导出的值
+                if item.name in self.global_scope:
+                    self.module_exports[item.name] = self.global_scope[item.name]
+                elif item.name in self.functions:
+                    self.module_exports[item.name] = self.functions[item.name]
+                else:
+                    raise NameError(f"Cannot export undefined variable '{item.name}'")
+            else:
+                # 这是一个命名导出（export { x, y, z }）
+                if item.name in self.global_scope:
+                    self.module_exports[item.name] = self.global_scope[item.name]
+                elif item.name in self.functions:
+                    self.module_exports[item.name] = self.functions[item.name]
+                else:
+                    raise NameError(f"Cannot export undefined variable '{item.name}'")
+
+    def visit_ClassDecl(self, node):
+        """Execute class declaration / 执行类声明"""
+        # 获取父类（如果有）
+        superclass = None
+        if node.superclass:
+            if node.superclass in self.classes:
+                superclass = self.classes[node.superclass]
+            else:
+                raise NameError(f"Superclass '{node.superclass}' is not defined")
+        
+        # 创建类对象
+        evil_class = EvilClass(node.name, superclass, {}, node.constructor)
+        
+        # 添加方法
+        for method in node.methods:
+            evil_class.methods[method.name] = method
+        
+        # 将类添加到类字典和全局作用域
+        self.classes[node.name] = evil_class
+        self.global_scope[node.name] = evil_class
+        
+        return evil_class
+    
+    def visit_NewExpr(self, node):
+        """Execute new expression / 执行new表达式"""
+        # 查找类
+        if node.class_name not in self.classes:
+            raise NameError(f"Class '{node.class_name}' is not defined")
+        
+        evil_class = self.classes[node.class_name]
+        
+        # 准备构造函数参数
+        args = []
+        for arg in node.arguments:
+            args.append(self.visit(arg))
+        
+        # 创建实例
+        return evil_class.instantiate(self, args)
+    
+    def visit_ThisExpr(self, node):
+        """Execute this expression / 执行this表达式"""
+        if 'this' in self.global_scope:
+            return self.global_scope['this']
+        else:
+            raise RuntimeError("'this' can only be used inside a class method")
+    
+    def visit_SuperExpr(self, node):
+        """Execute super expression / 执行super表达式"""
+        # TODO: 实现 super 支持
+        raise RuntimeError("'super' is not yet implemented")
+    
+    def visit_TryStmt(self, node):
+        """Execute try statement / 执行try语句"""
+        exception_caught = None
+        return_value = None
+        
+        # 执行try块
+        try:
+            return_value = self.visit(node.try_block)
+        except ReturnException as e:
+            # Return语句不应该被捕获为异常
+            if node.finally_block:
+                self.visit(node.finally_block)
+            raise
+        except BreakException:
+            # Break语句不应该被捕获为异常
+            if node.finally_block:
+                self.visit(node.finally_block)
+            raise
+        except ContinueException:
+            # Continue语句不应该被捕获为异常
+            if node.finally_block:
+                self.visit(node.finally_block)
+            raise
+        except EvilLangException as e:
+            # 用户抛出的异常
+            exception_caught = e
+        except EvilLangError as e:
+            # 将Evil Lang错误转换为异常值
+            exception_caught = EvilLangException(str(e))
+        except Exception as e:
+            # 其他Python异常
+            exception_caught = EvilLangException(str(e))
+        
+        # 如果捕获到异常且有catch子句
+        if exception_caught and node.catch_clause:
+            # 保存当前作用域
+            saved_scope = self.global_scope.copy()
+            
+            # 创建新作用域，包含异常参数
+            new_scope = saved_scope.copy()
+            new_scope[node.catch_clause.param] = exception_caught.value
+            
+            # 执行catch块
+            self.global_scope = new_scope
+            try:
+                return_value = self.visit(node.catch_clause.body)
+                exception_caught = None  # 异常已处理
+            finally:
+                # 恢复作用域
+                self.global_scope = saved_scope
+        
+        # 执行finally块（如果有）
+        if node.finally_block:
+            self.visit(node.finally_block)
+        
+        # 如果异常未被处理，重新抛出
+        if exception_caught:
+            raise exception_caught
+        
+        return return_value
+    
+    def visit_ThrowStmt(self, node):
+        """Execute throw statement / 执行throw语句"""
+        # 计算要抛出的值
+        value = self.visit(node.expr)
+        
+        # 抛出用户异常
+        raise EvilLangException(value)
+    
     def interpret(self, tree):
         """Main interpreter entry point / 解释器主入口点"""
         try:

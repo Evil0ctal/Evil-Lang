@@ -130,6 +130,108 @@ def _string_replace(args):
     return string.replace(old, new)
 
 
+def _string_to_upper(args):
+    """Convert string to uppercase 转换为大写"""
+    if len(args) != 1:
+        raise Exception("toUpper函数需要一个参数")
+    
+    string = args[0]
+    if not isinstance(string, str):
+        raise Exception("toUpper函数的参数必须是字符串")
+    
+    return string.upper()
+
+
+def _string_to_lower(args):
+    """Convert string to lowercase 转换为小写"""
+    if len(args) != 1:
+        raise Exception("toLower函数需要一个参数")
+    
+    string = args[0]
+    if not isinstance(string, str):
+        raise Exception("toLower函数的参数必须是字符串")
+    
+    return string.lower()
+
+
+def _string_trim(args):
+    """Trim whitespace from string 去除字符串两端空白"""
+    if len(args) != 1:
+        raise Exception("trim函数需要一个参数")
+    
+    string = args[0]
+    if not isinstance(string, str):
+        raise Exception("trim函数的参数必须是字符串")
+    
+    return string.strip()
+
+
+def _string_split(args):
+    """Split string by delimiter 按分隔符分割字符串"""
+    if len(args) < 1 or len(args) > 2:
+        raise Exception("split函数需要1-2个参数: (字符串, [分隔符])")
+    
+    string = args[0]
+    if not isinstance(string, str):
+        raise Exception("split函数的第一个参数必须是字符串")
+    
+    if len(args) == 2:
+        delimiter = args[1]
+        if not isinstance(delimiter, str):
+            raise Exception("split函数的第二个参数必须是字符串")
+        return string.split(delimiter)
+    else:
+        # 默认按空白字符分割
+        return string.split()
+
+
+def _string_join(args):
+    """Join array elements into string 将数组元素连接成字符串"""
+    if len(args) != 2:
+        raise Exception("join函数需要两个参数: (分隔符, 数组)")
+    
+    delimiter = args[0]
+    array = args[1]
+    
+    if not isinstance(delimiter, str):
+        raise Exception("join函数的第一个参数必须是字符串")
+    
+    if not isinstance(array, list):
+        raise Exception("join函数的第二个参数必须是数组")
+    
+    # 将数组元素转换为字符串
+    str_array = []
+    for item in array:
+        if item is None:
+            str_array.append("null")
+        elif isinstance(item, bool):
+            str_array.append("true" if item else "false")
+        else:
+            str_array.append(str(item))
+    
+    return delimiter.join(str_array)
+
+
+def _char_at(args):
+    """Get character at index 获取指定位置的字符"""
+    if len(args) != 2:
+        raise Exception("charAt函数需要两个参数: (字符串, 索引)")
+    
+    string = args[0]
+    index = args[1]
+    
+    if not isinstance(string, str):
+        raise Exception("charAt函数的第一个参数必须是字符串")
+    
+    if not isinstance(index, int):
+        raise Exception("charAt函数的第二个参数必须是整数")
+    
+    if index < 0 or index >= len(string):
+        raise Exception(f"charAt函数的索引越界: {index}")
+    
+    return string[index]
+
+
 # 注册内置函数
 register_builtin('toString', _to_string)
 register_builtin('stringLength', _string_length)
@@ -137,3 +239,9 @@ register_builtin('stringConcat', _string_concat)
 register_builtin('substring', _string_substring)
 register_builtin('indexOf', _string_index_of)
 register_builtin('replace', _string_replace)
+register_builtin('toUpper', _string_to_upper)
+register_builtin('toLower', _string_to_lower)
+register_builtin('trim', _string_trim)
+register_builtin('split', _string_split)
+register_builtin('join', _string_join)
+register_builtin('charAt', _char_at)

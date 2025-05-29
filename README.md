@@ -1,6 +1,6 @@
 # Evil Lang 🔮
 
-[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/Evil0ctal/Evil-Lang)
+[![Version](https://img.shields.io/badge/version-1.0.2-blue)](https://github.com/Evil0ctal/Evil-Lang)
 [![Python](https://img.shields.io/badge/python-3.6+-yellow)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/Evil0ctal/Evil-Lang/blob/main/LICENSE)
 [![Stars](https://img.shields.io/github/stars/Evil0ctal/Evil-Lang?style=social)](https://github.com/Evil0ctal/Evil-Lang)
@@ -36,17 +36,30 @@ for (var i = 0; i < 10; i = i + 1) {
 }
 ```
 
-## 📢 Changelog (v1.0.1)
+## 📢 Changelog (v1.0.2)
 
-This update focuses on improving error handling and the built-in function system, making Evil Lang more user-friendly and extensible:
+This major update introduces powerful new features that make Evil Lang a more complete programming language:
 
-* ✅ **Enhanced Error Reporting System** - Implemented complete call stack tracing with detailed error location and context
-* ✅ **Colorful Error Output** - Used ANSI color codes to highlight error messages, improving readability
-* ✅ **Standardized English Error Messages** - Standardized error messages in English for better internationalization
-* ✅ **Modular Built-in Function Architecture** - Restructured the built-in function system to make it more extensible
-* ✅ **New `typeof` Function** - Added support for runtime type checking
-* ✅ **Improved REPL Experience** - Better interactive environment with colored output and more detailed error information
-* ✅ **Code Snippet Highlighting** - Error reports now display the problematic code snippet and indicate the error position with caret (^) symbols
+### New Language Features
+* ✅ **Module System** - Full import/export support for code organization and reuse
+* ✅ **Object-Oriented Programming** - Classes, inheritance, constructors, and methods
+* ✅ **Exception Handling** - Complete try/catch/finally support with custom exceptions
+* ✅ **Enhanced String Support** - String length property and 12 new string functions
+* ✅ **Array Manipulation** - 10 new array functions including push, pop, slice, and more
+* ✅ **Method Calls** - Support for calling methods on objects (obj.method())
+
+### Standard Library Expansion
+* ✅ **String Functions** - `toUpper`, `toLower`, `trim`, `split`, `join`, `substring`, `indexOf`, `replace`, `charAt`
+* ✅ **Array Functions** - `push`, `pop`, `shift`, `unshift`, `slice`, `arrayReverse`, `arraySort`, `includes`, `arrayIndexOf`, `concat`
+* ✅ **Math Module** - Basic mathematical functions and constants
+* ✅ **Array Module** - Array manipulation utilities
+
+### Previous Updates (v1.0.1)
+* ✅ **Enhanced Error Reporting System** - Complete call stack tracing with detailed error location
+* ✅ **Colorful Error Output** - ANSI color codes for better readability
+* ✅ **Modular Built-in Function Architecture** - Extensible built-in function system
+* ✅ **New `typeof` Function** - Runtime type checking
+* ✅ **Improved REPL Experience** - Better interactive environment
 
 ## 🚀 Table of Contents
 
@@ -62,6 +75,20 @@ This update focuses on improving error handling and the built-in function system
 * [Future Development](#-future-development)
 * [Contribution Guidelines](#-contribution-guidelines)
 * [License](#-license)
+
+## 📚 Documentation
+
+Comprehensive documentation is available in multiple languages:
+
+- **[English Documentation](docs/en/README.md)** - Complete guide in English
+- **[中文文档](docs/zh/README.md)** - 完整的中文指南
+- **[Documentation Index](docs/README.md)** - All available documentation
+
+### Quick Links
+- [Quick Start Guide](docs/en/quick-start.md) - Get started in 5 minutes
+- [Language Reference](docs/en/basic-syntax.md) - Complete syntax guide
+- [Tutorials](docs/en/README.md#tutorials) - Step-by-step tutorials
+- [API Reference](docs/en/reference/builtin-functions.md) - Built-in functions and modules
 
 ## 🔍 Why Evil Lang?
 
@@ -121,6 +148,76 @@ var errorLogger = createLogger("ERROR");
 
 debugLogger("Program is running");
 errorLogger("Unhandled exception detected");
+```
+
+### Object-Oriented Programming
+
+```javascript
+// Define a class with constructor and methods
+class Animal {
+    constructor(name, sound) {
+        this.name = name;
+        this.sound = sound;
+    }
+    
+    speak() {
+        print(this.name + " says: " + this.sound);
+    }
+}
+
+// Inheritance
+class Dog extends Animal {
+    constructor(name) {
+        this.name = name;
+        this.sound = "Woof!";
+    }
+    
+    wagTail() {
+        print(this.name + " is wagging its tail!");
+    }
+}
+
+var dog = new Dog("Buddy");
+dog.speak();     // Output: Buddy says: Woof!
+dog.wagTail();   // Output: Buddy is wagging its tail!
+```
+
+### Exception Handling
+
+```javascript
+// Try-catch-finally example
+func divide(a, b) {
+    if (b == 0) {
+        throw "Division by zero error!";
+    }
+    return a / b;
+}
+
+try {
+    print(divide(10, 2));   // Output: 5
+    print(divide(10, 0));   // Throws exception
+} catch (e) {
+    print("Error caught: " + e);
+} finally {
+    print("Cleanup complete");
+}
+```
+
+### Module System
+
+```javascript
+// math_utils.el
+export func square(x) {
+    return x * x;
+}
+
+export var PI = 3.14159;
+
+// main.el
+import "math_utils" as Math;
+
+print(Math.square(5));  // Output: 25
+print(Math.PI);         // Output: 3.14159
 ```
 
 ## 📦 Installation and Usage
@@ -637,15 +734,17 @@ We value user experience, providing rich output and interactive features:
 
 ## 🔮 Future Development
 
-Evil Lang is still actively developing. Here are our planned iterations:
+Evil Lang continues to evolve. Here are our planned enhancements:
 
 ### 1. Language Enhancements
 
-* **Module System** - Implementing import and export mechanisms to support code reuse (planned for version 1.1.0)
-* **Class and Object System** - Adding simple but complete object-oriented programming support
-* **Exception Handling** - Adding try/catch mechanisms
-* **Standard Library** - Building a powerful standard library including math, string processing, and file I/O
-* **Asynchronous Programming** - Implementing Promise or similar mechanisms
+* ✅ **Module System** - Import and export mechanisms (implemented in v1.0.2)
+* ✅ **Class and Object System** - Object-oriented programming support (implemented in v1.0.2)
+* ✅ **Exception Handling** - Try/catch mechanisms (implemented in v1.0.2)
+* ⏳ **Enhanced Standard Library** - Expanding math, string, and adding file I/O support
+* ⏳ **Asynchronous Programming** - Implementing Promise or async/await mechanisms
+* ⏳ **Pattern Matching** - Adding switch/case statements with pattern matching
+* ⏳ **Operator Overloading** - Allow custom operators for user-defined types
 
 ### 2. Tools and Ecosystem
 

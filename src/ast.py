@@ -145,8 +145,17 @@ class FuncDecl(AST):
 
 class FuncCall(AST):
     """Function call node 函数调用节点"""
-    def __init__(self, name, arguments):
+    def __init__(self, name, arguments, token=None):
         self.name = name          # 函数名 Function name
+        self.arguments = arguments  # 参数列表 Argument list
+        self.token = token        # 保存位置信息 Save position info
+
+
+class MethodCall(AST):
+    """Method call node 方法调用节点"""
+    def __init__(self, obj, method, arguments):
+        self.obj = obj            # 对象 Object
+        self.method = method      # 方法名 Method name
         self.arguments = arguments  # 参数列表 Argument list
 
 
@@ -192,3 +201,92 @@ class FuncRef:
     def __init__(self, func_node, lexical_scope=None):
         self.func_node = func_node        # 函数定义 Function definition
         self.lexical_scope = lexical_scope  # 词法作用域，用于闭包 Lexical scope for closures
+
+
+# 模块系统相关节点 Module system related nodes
+class ImportStmt(AST):
+    """Import statement node 导入语句节点"""
+    def __init__(self, module_path, items=None, alias=None):
+        self.module_path = module_path  # 模块路径 Module path
+        self.items = items or []        # 导入项列表 Import items list
+        self.alias = alias              # 别名 Alias (for import ... as ...)
+
+
+class ExportStmt(AST):
+    """Export statement node 导出语句节点"""
+    def __init__(self, items):
+        self.items = items  # 导出项列表 Export items list
+
+
+class ImportItem(AST):
+    """Import item node 导入项节点"""
+    def __init__(self, name, alias=None):
+        self.name = name    # 原始名称 Original name
+        self.alias = alias  # 别名 Alias
+
+
+class ExportItem(AST):
+    """Export item node 导出项节点"""
+    def __init__(self, name, value=None):
+        self.name = name    # 导出名称 Export name
+        self.value = value  # 导出值 Export value
+
+
+# 类和对象相关节点 Class and object related nodes
+class ClassDecl(AST):
+    """Class declaration node 类声明节点"""
+    def __init__(self, name, superclass, methods, constructor=None):
+        self.name = name              # 类名 Class name
+        self.superclass = superclass  # 父类 Superclass (can be None)
+        self.constructor = constructor # 构造函数 Constructor method
+        self.methods = methods        # 方法列表 Methods list
+
+
+class MethodDecl(AST):
+    """Method declaration node 方法声明节点"""
+    def __init__(self, name, params, body, is_static=False):
+        self.name = name          # 方法名 Method name
+        self.params = params      # 参数列表 Parameters list
+        self.body = body          # 方法体 Method body
+        self.is_static = is_static # 是否是静态方法 Is static method
+
+
+class NewExpr(AST):
+    """New expression node (object instantiation) 对象实例化节点"""
+    def __init__(self, class_name, arguments):
+        self.class_name = class_name  # 类名 Class name
+        self.arguments = arguments    # 构造函数参数 Constructor arguments
+
+
+class ThisExpr(AST):
+    """This expression node this表达式节点"""
+    def __init__(self, token):
+        self.token = token
+
+
+class SuperExpr(AST):
+    """Super expression node super表达式节点"""
+    def __init__(self, token):
+        self.token = token
+
+
+# 异常处理相关节点 Exception handling related nodes
+class TryStmt(AST):
+    """Try statement node try语句节点"""
+    def __init__(self, try_block, catch_clause=None, finally_block=None):
+        self.try_block = try_block
+        self.catch_clause = catch_clause  # CatchClause node
+        self.finally_block = finally_block
+
+
+class CatchClause(AST):
+    """Catch clause node catch子句节点"""
+    def __init__(self, param, body):
+        self.param = param  # Variable name for the caught exception
+        self.body = body
+
+
+class ThrowStmt(AST):
+    """Throw statement node throw语句节点"""
+    def __init__(self, expr):
+        self.expr = expr

@@ -1,170 +1,155 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Evil Lang - 数值处理内置函数 / Numeric Processing Built-in Functions
-# Author: Evil0ctal
-# Date: 2025-05-04
+"""
+Evil Lang - Numeric Processing Built-in Functions
+数值处理内置函数
+"""
 
 from . import register_builtin
+from ..types import NumberType, get_type_name
+from ..errors import TypeError as EvilTypeError, ValueError as EvilValueError
 
 
 def _to_number(args):
     """Convert value to number 将值转换为数字"""
     if len(args) != 1:
-        raise Exception("toNumber函数需要一个参数")
-
-    value = args[0]
-
-    # 如果已经是数字类型直接返回
-    if isinstance(value, (int, float)):
-        return value
-
-    # 如果是字符串尝试转换
-    if isinstance(value, str):
-        try:
-            # 先尝试转换为整数
-            if '.' in value:
-                return float(value)
-            else:
-                return int(value)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{value}' 转换为数字")
-
-    raise Exception(f"无法将类型 {type(value)} 转换为数字")
+        raise EvilValueError("toNumber function requires exactly one argument")
+    
+    try:
+        return NumberType.convert(args[0])
+    except EvilTypeError as e:
+        raise e  # Re-raise with proper error type
 
 
 def _number_add(args):
-    """Add two values as numbers / 将两个值作为数字相加"""
+    """Add two values as numbers 将两个值作为数字相加"""
+    if len(args) != 2:
+        raise EvilValueError("numberAdd function requires exactly two arguments")
+    
     try:
-        if len(args) != 2:
-            raise ValueError("numberAdd function requires two arguments")
-
-        a, b = args
-
-        # Try to convert arguments to numbers / 尝试将参数转换为数字
-        if isinstance(a, str):
-            try:
-                a = float(a) if '.' in a else int(a)
-            except ValueError:
-                raise ValueError(f"Cannot convert string '{a}' to a number")
-
-        if isinstance(b, str):
-            try:
-                b = float(b) if '.' in b else int(b)
-            except ValueError:
-                raise ValueError(f"Cannot convert string '{b}' to a number")
-
+        a = NumberType.convert(args[0])
+        b = NumberType.convert(args[1])
         return a + b
-    except Exception as e:
-        # Convert any regular Python exceptions to our custom error types
-        if isinstance(e, ValueError):
-            # Already our custom error type, just re-raise
-            raise
-        else:
-            # Wrap in our custom error type
-            raise RuntimeError(str(e))
+    except EvilTypeError as e:
+        raise e
 
 
 def _number_sub(args):
     """Subtract two values as numbers 将两个值作为数字相减"""
     if len(args) != 2:
-        raise Exception("numberSub函数需要两个参数")
-
-    a, b = args
-
-    # 尝试将两个参数转换为数字
-    if isinstance(a, str):
-        try:
-            a = float(a) if '.' in a else int(a)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{a}' 转换为数字")
-
-    if isinstance(b, str):
-        try:
-            b = float(b) if '.' in b else int(b)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{b}' 转换为数字")
-
-    return a - b
+        raise EvilValueError("numberSub function requires exactly two arguments")
+    
+    try:
+        a = NumberType.convert(args[0])
+        b = NumberType.convert(args[1])
+        return a - b
+    except EvilTypeError as e:
+        raise e
 
 
 def _number_mul(args):
     """Multiply two values as numbers 将两个值作为数字相乘"""
     if len(args) != 2:
-        raise Exception("numberMul函数需要两个参数")
-
-    a, b = args
-
-    # 尝试将两个参数转换为数字
-    if isinstance(a, str):
-        try:
-            a = float(a) if '.' in a else int(a)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{a}' 转换为数字")
-
-    if isinstance(b, str):
-        try:
-            b = float(b) if '.' in b else int(b)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{b}' 转换为数字")
-
-    return a * b
+        raise EvilValueError("numberMul function requires exactly two arguments")
+    
+    try:
+        a = NumberType.convert(args[0])
+        b = NumberType.convert(args[1])
+        return a * b
+    except EvilTypeError as e:
+        raise e
 
 
 def _number_div(args):
     """Divide two values as numbers 将两个值作为数字相除"""
     if len(args) != 2:
-        raise Exception("numberDiv函数需要两个参数")
+        raise EvilValueError("numberDiv function requires exactly two arguments")
+    
+    try:
+        a = NumberType.convert(args[0])
+        b = NumberType.convert(args[1])
+        
+        if b == 0:
+            raise EvilValueError("Division by zero")
+            
+        return a / b
+    except EvilTypeError as e:
+        raise e
 
-    a, b = args
 
-    # 尝试将两个参数转换为数字
-    if isinstance(a, str):
-        try:
-            a = float(a) if '.' in a else int(a)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{a}' 转换为数字")
+def _abs(args):
+    """Get absolute value 获取绝对值"""
+    if len(args) != 1:
+        raise EvilValueError("abs function requires exactly one argument")
+    
+    try:
+        value = NumberType.convert(args[0])
+        return abs(value)
+    except EvilTypeError as e:
+        raise e
 
-    if isinstance(b, str):
-        try:
-            b = float(b) if '.' in b else int(b)
-        except ValueError:
-            raise Exception(f"无法将字符串 '{b}' 转换为数字")
 
-    if b == 0:
-        raise Exception("除数不能为零")
+def _round(args):
+    """Round a number 四舍五入"""
+    if len(args) < 1 or len(args) > 2:
+        raise EvilValueError("round function requires one or two arguments")
+    
+    try:
+        value = NumberType.convert(args[0])
+        
+        if len(args) == 2:
+            precision = NumberType.convert(args[1])
+            if not isinstance(precision, int):
+                precision = int(precision)
+            return round(value, precision)
+        else:
+            return round(value)
+    except EvilTypeError as e:
+        raise e
 
-    return a / b
+
+def _min(args):
+    """Find minimum value 查找最小值"""
+    if len(args) == 0:
+        raise EvilValueError("min function requires at least one argument")
+    
+    try:
+        # Convert all arguments to numbers
+        numbers = [NumberType.convert(arg) for arg in args]
+        return min(numbers)
+    except EvilTypeError as e:
+        raise e
+
+
+def _max(args):
+    """Find maximum value 查找最大值"""
+    if len(args) == 0:
+        raise EvilValueError("max function requires at least one argument")
+    
+    try:
+        # Convert all arguments to numbers
+        numbers = [NumberType.convert(arg) for arg in args]
+        return max(numbers)
+    except EvilTypeError as e:
+        raise e
 
 
 def _typeof(args):
-    """Get the type of a value"""
+    """Get the type of a value 获取值的类型"""
     if len(args) != 1:
-        raise ValueError("typeof function requires exactly one argument")
-
-    value = args[0]
-
-    if value is None:
-        return "null"
-    elif isinstance(value, bool):
-        return "boolean"
-    elif isinstance(value, (int, float)):
-        return "number"
-    elif isinstance(value, str):
-        return "string"
-    elif isinstance(value, list):
-        return "array"
-    elif isinstance(value, dict):
-        return "object"
-    elif callable(value) or hasattr(value, 'func_node'):
-        return "function"
-    else:
-        return "unknown"
+        raise EvilValueError("typeof function requires exactly one argument")
+    
+    return get_type_name(args[0])
 
 
-# 注册内置函数 / Register built-in functions
+# Register all numeric functions
 register_builtin('toNumber', _to_number)
 register_builtin('numberAdd', _number_add)
 register_builtin('numberSub', _number_sub)
 register_builtin('numberMul', _number_mul)
 register_builtin('numberDiv', _number_div)
+register_builtin('abs', _abs)
+register_builtin('round', _round)
+register_builtin('min', _min)
+register_builtin('max', _max)
 register_builtin('typeof', _typeof)

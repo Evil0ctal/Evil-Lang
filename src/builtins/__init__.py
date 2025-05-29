@@ -22,5 +22,6 @@ def get_builtins():
 from .numeric import *
 from .string import *
 from .io import *
+from .array import *
 
 # 可以在这里添加其他内置函数模块

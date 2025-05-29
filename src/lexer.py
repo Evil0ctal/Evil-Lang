@@ -45,6 +45,20 @@ KEYWORDS = {
     'break': 'BREAK',
     'continue': 'CONTINUE',
     'array': 'ARRAY',
+    'import': 'IMPORT',
+    'export': 'EXPORT',
+    'from': 'FROM',
+    'as': 'AS',
+    'class': 'CLASS',
+    'extends': 'EXTENDS',
+    'new': 'NEW',
+    'this': 'THIS',
+    'super': 'SUPER',
+    'constructor': 'CONSTRUCTOR',
+    'try': 'TRY',
+    'catch': 'CATCH',
+    'finally': 'FINALLY',
+    'throw': 'THROW',
 }
 
 
@@ -72,6 +86,22 @@ class Lexer:
         self.line = 1
         self.column = 1
         self.current_char = self.source[0] if self.source else None
+
+    def save_state(self):
+        """Save the current lexer state 保存当前词法分析器状态"""
+        return {
+            'position': self.position,
+            'line': self.line,
+            'column': self.column,
+            'current_char': self.current_char
+        }
+
+    def restore_state(self, state):
+        """Restore the lexer to a saved state 恢复词法分析器到保存的状态"""
+        self.position = state['position']
+        self.line = state['line']
+        self.column = state['column']
+        self.current_char = state['current_char']
 
     def advance(self):
         """Advance to next character 前进到下一个字符"""
@@ -249,7 +279,7 @@ class Lexer:
                 return token
 
             # 操作符
-            if self.current_char in '+-*/=<>!&|?':  # 添加了 '?' 支持三元运算符
+            if self.current_char in '+-*/%=<>!&|?':  # 添加了 '?' 和 '%' 支持三元运算符和模运算
                 column = self.column
                 op = self.current_char
                 self.advance()

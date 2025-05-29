@@ -4,18 +4,9 @@
 # Author: Evil0ctal
 # Date: 2025-05-04
 
-# ANSI color codes for terminal output / 终端输出的ANSI颜色代码
-class Colors:
-    """ANSI color codes for terminal output / 终端输出的ANSI颜色代码"""
-    RED = '\033[91m'  # For errors / 用于错误
-    YELLOW = '\033[93m'  # For warnings / 用于警告
-    GREEN = '\033[92m'  # For success / 用于成功
-    BLUE = '\033[94m'  # For info / 用于信息
-    MAGENTA = '\033[95m'  # For special messages / 用于特殊消息
-    CYAN = '\033[96m'  # For debugging / 用于调试
-    BOLD = '\033[1m'  # Bold text / 粗体文本
-    UNDERLINE = '\033[4m'  # Underlined text / 带下划线的文本
-    RESET = '\033[0m'  # Reset to default / 重置为默认
+# Import Colors from config module for consistency
+# 从配置模块导入 Colors 以保持一致性
+from .config import Colors, Config
 
 
 class EvilLangError(Exception):
@@ -46,10 +37,14 @@ class EvilLangError(Exception):
         else:
             return "unknown location"
 
-    def format_code_snippet(self, use_colors=True):
+    def format_code_snippet(self, use_colors=None):
         """Format a code snippet showing the error location"""
         if not self.source_code or self.line is None:
             return ""
+
+        # Use global config if not specified
+        if use_colors is None:
+            use_colors = Config.USE_COLORS and Config.COLOR_OUTPUT
 
         # Colors for formatting
         error_color = Colors.RED if use_colors else ""
@@ -71,9 +66,44 @@ class EvilLangError(Exception):
                 padding = " " * (self.column + 4)  # 4 for ">>> "
                 result += f"{error_color}{padding}^--- Error occurs here{reset}\n"
             return result
+        
+        # For regular files, format multi-line snippet
+        if 1 <= self.line <= len(lines):
+            result = f"\n{bold}Code snippet:{reset}\n"
+            
+            # Show context lines
+            start_line = max(1, self.line - Config.ERROR_CONTEXT_LINES)
+            end_line = min(len(lines), self.line + Config.ERROR_CONTEXT_LINES)
+            
+            for i in range(start_line - 1, end_line):
+                line_num = i + 1
+                line_content = lines[i]
+                
+                if line_num == self.line:
+                    # Highlight the error line
+                    result += f"{error_color}{bold}{line_num:4d} | {line_content}{reset}\n"
+                    
+                    # Add caret if column is available
+                    if self.column is not None and self.column > 0:
+                        padding = " " * (6 + self.column - 1)  # 6 for line number and " | "
+                        result += f"{error_color}{padding}^--- Error occurs here{reset}\n"
+                else:
+                    result += f"{line_num:4d} | {line_content}\n"
+                    
+            return result
+            
+        return ""  # Return empty string instead of None
 
-    def format_error(self, use_colors=True):
+    def format_error(self, use_colors=None, filename=None):
         """Format the error message with stack trace / 使用堆栈跟踪格式化错误消息"""
+        # Use global config if not specified
+        if use_colors is None:
+            use_colors = Config.USE_COLORS and Config.COLOR_OUTPUT
+            
+        # Use provided filename or instance filename
+        if filename is None:
+            filename = self.filename
+            
         # Colors for formatting / 格式化的颜色
         error_color = Colors.RED if use_colors else ""
         reset = Colors.RESET if use_colors else ""
@@ -154,3 +184,10 @@ class ValueError(EvilLangError):
 class IndexError(EvilLangError):
     """Error when accessing an invalid index / 访问无效索引时的错误"""
     pass
+
+
+class EvilLangException(Exception):
+    """User-thrown exception in Evil Lang / Evil Lang中用户抛出的异常"""
+    def __init__(self, value):
+        self.value = value
+        super().__init__(str(value))

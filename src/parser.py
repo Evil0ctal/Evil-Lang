@@ -25,7 +25,7 @@ class Parser:
         message = f"Parser error: Expected {expected_token_name}, got {got_token_name}"
 
         # Create a syntax error with position information
-        error = SyntaxError(message, token.line, token.column, self.lexer.text, getattr(self, 'filename', 'REPL'))
+        error = SyntaxError(message, token.line, token.column, self.lexer.source, getattr(self, 'filename', 'REPL'))
 
         # Add a stack frame for the parser
         error.add_stack_frame("parser", token.line, token.column)
@@ -42,7 +42,7 @@ class Parser:
             self.current_token = self.lexer.get_next_token()
             return result
         else:
-            self.error(f"Expected {token_type}, got {self.current_token.type}")
+            self.error(f"Expected {token_type}, got {self.current_token.type}", self.current_token)
 
     def parse(self):
         """Entry point for parsing 解析入口点"""
@@ -94,6 +94,29 @@ class Parser:
                 return self.break_statement()
             elif self.current_token.value == 'CONTINUE':
                 return self.continue_statement()
+            elif self.current_token.value == 'IMPORT':
+                return self.import_statement()
+            elif self.current_token.value == 'EXPORT':
+                return self.export_statement()
+            elif self.current_token.value == 'CLASS':
+                return self.class_declaration()
+            elif self.current_token.value == 'TRY':
+                return self.try_statement()
+            elif self.current_token.value == 'THROW':
+                return self.throw_statement()
+            elif self.current_token.value in ['THIS', 'SUPER']:
+                # Handle this/super as part of expression (e.g., this.name = value)
+                left = self.expr()
+                
+                # Expect assignment in statement context
+                if self.current_token.type == TokenType.OPERATOR and self.current_token.value == '=':
+                    op_token = self.current_token
+                    self.eat(TokenType.OPERATOR)  # '='
+                    right = self.expr()
+                    self.eat(TokenType.SEMICOLON)
+                    return Assign(left, op_token, right)
+                else:
+                    self.error(f"Expected assignment operator after expression in statement context", self.current_token)
 
         elif self.current_token.type == TokenType.IDENTIFIER:
             # 保存当前词法分析器的状态，以便可能需要回溯
@@ -148,13 +171,18 @@ class Parser:
                     self.eat(TokenType.SEMICOLON)
                     return Assign(left, op_token, right)
                 else:
-                    # 必须是语句，所以应该是赋值
-                    self.error(f"Expected assignment operator in statement context")
+                    # Check if it's a method call or other valid expression statement
+                    if isinstance(left, (FuncCall, MethodCall)):
+                        self.eat(TokenType.SEMICOLON)
+                        return left
+                    else:
+                        # 必须是语句，所以应该是赋值
+                        self.error(f"Expected assignment operator in statement context", self.current_token)
 
         elif self.current_token.type == TokenType.SEMICOLON:
             return self.empty()
 
-        self.error(f"Unexpected token: {self.current_token}")
+        self.error(f"Unexpected token: {self.current_token}", self.current_token)
 
     def compound_statement(self):
         """Parse compound statement (block) 解析复合语句（块）"""
@@ -323,6 +351,7 @@ class Parser:
             print(f"Parsing function call, current token: {self.current_token}")
 
         # 获取函数名称
+        func_token = self.current_token  # 保存位置信息
         func_name = self.current_token.value
         self.eat(TokenType.IDENTIFIER)
 
@@ -345,7 +374,7 @@ class Parser:
 
         self.eat(TokenType.RPAREN)
 
-        return FuncCall(func_name, args)
+        return FuncCall(func_name, args, func_token)
 
     def input_func_call(self):
         """Parse input function call 解析input函数调用"""
@@ -413,23 +442,34 @@ class Parser:
             if self.current_token.type == TokenType.STRING:
                 key = self.current_token.value
                 self.eat(TokenType.STRING)
+            elif self.current_token.type == TokenType.IDENTIFIER:
+                key = self.current_token.value
+                self.eat(TokenType.IDENTIFIER)
+            else:
+                self.error(f"Object key must be string or identifier, got: {self.current_token.type}", self.current_token)
+                
+            self.eat(TokenType.COLON)
+            value = self.expr()
+            pairs[key] = value
+
+            # 解析剩余的键值对
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                if self.current_token.type == TokenType.RBRACE:
+                    break  # 允许尾随逗号
+                    
+                if self.current_token.type == TokenType.STRING:
+                    key = self.current_token.value
+                    self.eat(TokenType.STRING)
+                elif self.current_token.type == TokenType.IDENTIFIER:
+                    key = self.current_token.value
+                    self.eat(TokenType.IDENTIFIER)
+                else:
+                    self.error(f"Object key must be string or identifier, got: {self.current_token.type}", self.current_token)
+                    
                 self.eat(TokenType.COLON)
                 value = self.expr()
                 pairs[key] = value
-
-                # 解析剩余的键值对
-                while self.current_token.type == TokenType.COMMA:
-                    self.eat(TokenType.COMMA)
-                    if self.current_token.type == TokenType.STRING:
-                        key = self.current_token.value
-                        self.eat(TokenType.STRING)
-                        self.eat(TokenType.COLON)
-                        value = self.expr()
-                        pairs[key] = value
-                    else:
-                        self.error(f"对象键必须是字符串，得到了: {self.current_token.type}")
-            else:
-                self.error(f"对象键必须是字符串，得到了: {self.current_token.type}")
 
         self.eat(TokenType.RBRACE)
         return ObjectLiteral(pairs)
@@ -563,6 +603,60 @@ class Parser:
         elif token.type == TokenType.KEYWORD and token.value == 'INPUT':
             # 处理input函数调用
             return self.input_func_call()
+        
+        elif token.type == TokenType.KEYWORD and token.value == 'NEW':
+            self.eat(TokenType.KEYWORD)  # 吃掉 'new'
+            
+            # 获取类名
+            if self.current_token.type != TokenType.IDENTIFIER:
+                self.error("Expected class name after 'new'", self.current_token)
+            
+            class_name = self.current_token.value
+            self.eat(TokenType.IDENTIFIER)
+            
+            # 解析构造函数参数
+            self.eat(TokenType.LPAREN)
+            args = []
+            
+            if self.current_token.type != TokenType.RPAREN:
+                args.append(self.expr())
+                while self.current_token.type == TokenType.COMMA:
+                    self.eat(TokenType.COMMA)
+                    args.append(self.expr())
+            
+            self.eat(TokenType.RPAREN)
+            return NewExpr(class_name, args)
+        
+        elif token.type == TokenType.KEYWORD and token.value == 'THIS':
+            self.eat(TokenType.KEYWORD)
+            node = ThisExpr(token)
+            
+            # Handle property access on this (e.g., this.name)
+            while self.current_token.type == TokenType.DOT:
+                self.eat(TokenType.DOT)
+                prop_token = self.current_token
+                self.eat(TokenType.IDENTIFIER)
+                node = PropertyAccess(node, prop_token.value)
+                
+                # Check if it's a method call
+                if self.current_token.type == TokenType.LPAREN:
+                    self.eat(TokenType.LPAREN)
+                    args = []
+                    
+                    if self.current_token.type != TokenType.RPAREN:
+                        args.append(self.expr())
+                        while self.current_token.type == TokenType.COMMA:
+                            self.eat(TokenType.COMMA)
+                            args.append(self.expr())
+                    
+                    self.eat(TokenType.RPAREN)
+                    node = MethodCall(node.obj, prop_token.value, args)
+            
+            return node
+        
+        elif token.type == TokenType.KEYWORD and token.value == 'SUPER':
+            self.eat(TokenType.KEYWORD)
+            return SuperExpr(token)
 
         elif token.type == TokenType.IDENTIFIER:
             # 保存当前状态，以便可能的回溯
@@ -604,6 +698,20 @@ class Parser:
                     prop_token = self.current_token
                     self.eat(TokenType.IDENTIFIER)
                     node = PropertyAccess(node, prop_token.value)
+                    
+                    # 检查是否是方法调用
+                    if self.current_token.type == TokenType.LPAREN:
+                        self.eat(TokenType.LPAREN)
+                        args = []
+                        
+                        if self.current_token.type != TokenType.RPAREN:
+                            args.append(self.expr())
+                            while self.current_token.type == TokenType.COMMA:
+                                self.eat(TokenType.COMMA)
+                                args.append(self.expr())
+                        
+                        self.eat(TokenType.RPAREN)
+                        node = MethodCall(node.obj, prop_token.value, args)
 
                 return node
             elif self.current_token.type == TokenType.DOT:
@@ -617,6 +725,20 @@ class Parser:
                     prop_token = self.current_token
                     self.eat(TokenType.IDENTIFIER)
                     node = PropertyAccess(node, prop_token.value)
+                    
+                    # 检查是否是方法调用
+                    if self.current_token.type == TokenType.LPAREN:
+                        self.eat(TokenType.LPAREN)
+                        args = []
+                        
+                        if self.current_token.type != TokenType.RPAREN:
+                            args.append(self.expr())
+                            while self.current_token.type == TokenType.COMMA:
+                                self.eat(TokenType.COMMA)
+                                args.append(self.expr())
+                        
+                        self.eat(TokenType.RPAREN)
+                        node = MethodCall(node.obj, prop_token.value, args)
 
                 return node
             else:
@@ -624,4 +746,279 @@ class Parser:
                 return Var(saved_token)
 
         else:
-            self.error(f"Unexpected token in factor: {token}")
+            self.error(f"Unexpected token in factor: {token}", token)
+
+    def import_statement(self):
+        """Parse import statement 解析导入语句
+        
+        Syntax:
+            import "module_path"
+            import "module_path" as alias
+            import { item1, item2 as alias2 } from "module_path"
+        """
+        self.eat(TokenType.KEYWORD)  # 吃掉 'import'
+        
+        # 检查是否是 import { ... } from "..."
+        if self.current_token.type == TokenType.LBRACE:
+            # 解析导入项
+            self.eat(TokenType.LBRACE)
+            items = []
+            
+            while self.current_token.type != TokenType.RBRACE:
+                # 解析导入项名称
+                if self.current_token.type != TokenType.IDENTIFIER:
+                    self.error("Expected identifier in import list", self.current_token)
+                
+                name = self.current_token.value
+                self.eat(TokenType.IDENTIFIER)
+                
+                # 检查是否有别名
+                alias = None
+                if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'AS':
+                    self.eat(TokenType.KEYWORD)  # 吃掉 'as'
+                    if self.current_token.type != TokenType.IDENTIFIER:
+                        self.error("Expected identifier after 'as'", self.current_token)
+                    alias = self.current_token.value
+                    self.eat(TokenType.IDENTIFIER)
+                
+                items.append(ImportItem(name, alias))
+                
+                # 检查逗号或结束
+                if self.current_token.type == TokenType.COMMA:
+                    self.eat(TokenType.COMMA)
+                    if self.current_token.type == TokenType.RBRACE:
+                        break  # 允许尾随逗号
+                elif self.current_token.type != TokenType.RBRACE:
+                    self.error("Expected ',' or '}' in import list", self.current_token)
+            
+            self.eat(TokenType.RBRACE)
+            
+            # 期望 'from'
+            if self.current_token.type != TokenType.KEYWORD or self.current_token.value != 'FROM':
+                self.error("Expected 'from' after import list", self.current_token)
+            self.eat(TokenType.KEYWORD)  # 吃掉 'from'
+            
+            # 解析模块路径
+            if self.current_token.type != TokenType.STRING:
+                self.error("Expected module path string", self.current_token)
+            module_path = self.current_token.value
+            self.eat(TokenType.STRING)
+            
+            self.eat(TokenType.SEMICOLON)
+            return ImportStmt(module_path, items=items)
+            
+        else:
+            # import "module_path" [as alias]
+            if self.current_token.type != TokenType.STRING:
+                self.error("Expected module path string", self.current_token)
+            
+            module_path = self.current_token.value
+            self.eat(TokenType.STRING)
+            
+            # 检查是否有别名
+            alias = None
+            if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'AS':
+                self.eat(TokenType.KEYWORD)  # 吃掉 'as'
+                if self.current_token.type != TokenType.IDENTIFIER:
+                    self.error("Expected identifier after 'as'", self.current_token)
+                alias = self.current_token.value
+                self.eat(TokenType.IDENTIFIER)
+            
+            self.eat(TokenType.SEMICOLON)
+            return ImportStmt(module_path, alias=alias)
+    
+    def export_statement(self):
+        """Parse export statement 解析导出语句
+        
+        Syntax:
+            export var x = 10;
+            export func foo() { ... }
+            export { var1, var2, func1 };
+        """
+        self.eat(TokenType.KEYWORD)  # 吃掉 'export'
+        
+        # 检查是否是 export { ... }
+        if self.current_token.type == TokenType.LBRACE:
+            self.eat(TokenType.LBRACE)
+            items = []
+            
+            while self.current_token.type != TokenType.RBRACE:
+                if self.current_token.type != TokenType.IDENTIFIER:
+                    self.error("Expected identifier in export list", self.current_token)
+                
+                name = self.current_token.value
+                self.eat(TokenType.IDENTIFIER)
+                items.append(ExportItem(name))
+                
+                # 检查逗号或结束
+                if self.current_token.type == TokenType.COMMA:
+                    self.eat(TokenType.COMMA)
+                    if self.current_token.type == TokenType.RBRACE:
+                        break  # 允许尾随逗号
+                elif self.current_token.type != TokenType.RBRACE:
+                    self.error("Expected ',' or '}' in export list", self.current_token)
+            
+            self.eat(TokenType.RBRACE)
+            self.eat(TokenType.SEMICOLON)
+            return ExportStmt(items)
+            
+        else:
+            # export var/func declaration
+            if self.current_token.type == TokenType.KEYWORD:
+                if self.current_token.value == 'VAR':
+                    # export var x = value;
+                    var_decl = self.declaration_statement()
+                    return ExportStmt([ExportItem(var_decl.var_node.value, var_decl)])
+                elif self.current_token.value == 'FUNC':
+                    # export func foo() { ... }
+                    func_decl = self.func_declaration()
+                    return ExportStmt([ExportItem(func_decl.name, func_decl)])
+                else:
+                    self.error("Expected 'var' or 'func' after 'export'", self.current_token)
+            else:
+                self.error("Expected declaration after 'export'", self.current_token)
+    
+    def class_declaration(self):
+        """Parse class declaration 解析类声明
+        
+        Syntax:
+            class ClassName {
+                constructor(params) { ... }
+                method(params) { ... }
+            }
+            
+            class ChildClass extends ParentClass {
+                ...
+            }
+        """
+        self.eat(TokenType.KEYWORD)  # 吃掉 'class'
+        
+        # 获取类名
+        if self.current_token.type != TokenType.IDENTIFIER:
+            self.error("Expected class name", self.current_token)
+        
+        class_name = self.current_token.value
+        self.eat(TokenType.IDENTIFIER)
+        
+        # 检查是否有继承
+        superclass = None
+        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'EXTENDS':
+            self.eat(TokenType.KEYWORD)  # 吃掉 'extends'
+            
+            if self.current_token.type != TokenType.IDENTIFIER:
+                self.error("Expected superclass name", self.current_token)
+            
+            superclass = self.current_token.value
+            self.eat(TokenType.IDENTIFIER)
+        
+        # 期望类体
+        self.eat(TokenType.LBRACE)
+        
+        # 解析方法
+        methods = []
+        constructor = None
+        
+        while self.current_token.type != TokenType.RBRACE:
+            # 检查是否是构造函数
+            if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'CONSTRUCTOR':
+                if constructor is not None:
+                    self.error("Class can only have one constructor", self.current_token)
+                
+                self.eat(TokenType.KEYWORD)  # 吃掉 'constructor'
+                self.eat(TokenType.LPAREN)
+                
+                # 解析参数
+                params = []
+                if self.current_token.type != TokenType.RPAREN:
+                    params.append(Var(self.current_token))
+                    self.eat(TokenType.IDENTIFIER)
+                    
+                    while self.current_token.type == TokenType.COMMA:
+                        self.eat(TokenType.COMMA)
+                        params.append(Var(self.current_token))
+                        self.eat(TokenType.IDENTIFIER)
+                
+                self.eat(TokenType.RPAREN)
+                
+                # 解析方法体
+                body = self.compound_statement()
+                constructor = MethodDecl('constructor', params, body)
+                
+            # 普通方法
+            elif self.current_token.type == TokenType.IDENTIFIER:
+                method_name = self.current_token.value
+                self.eat(TokenType.IDENTIFIER)
+                
+                self.eat(TokenType.LPAREN)
+                
+                # 解析参数
+                params = []
+                if self.current_token.type != TokenType.RPAREN:
+                    params.append(Var(self.current_token))
+                    self.eat(TokenType.IDENTIFIER)
+                    
+                    while self.current_token.type == TokenType.COMMA:
+                        self.eat(TokenType.COMMA)
+                        params.append(Var(self.current_token))
+                        self.eat(TokenType.IDENTIFIER)
+                
+                self.eat(TokenType.RPAREN)
+                
+                # 解析方法体
+                body = self.compound_statement()
+                methods.append(MethodDecl(method_name, params, body))
+            
+            else:
+                self.error("Expected method declaration in class body", self.current_token)
+        
+        self.eat(TokenType.RBRACE)
+        
+        return ClassDecl(class_name, superclass, methods, constructor)
+    
+    def try_statement(self):
+        """Parse try statement / 解析try语句"""
+        self.eat(TokenType.KEYWORD)  # 'try'
+        
+        # 解析try块
+        try_block = self.compound_statement()
+        
+        catch_clause = None
+        finally_block = None
+        
+        # 检查是否有catch子句
+        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'CATCH':
+            self.eat(TokenType.KEYWORD)  # 'catch'
+            self.eat(TokenType.LPAREN)
+            
+            # 解析异常参数
+            if self.current_token.type != TokenType.IDENTIFIER:
+                self.error("Expected exception parameter name in catch clause", self.current_token)
+            
+            param = self.current_token.value
+            self.eat(TokenType.IDENTIFIER)
+            self.eat(TokenType.RPAREN)
+            
+            # 解析catch块
+            catch_body = self.compound_statement()
+            catch_clause = CatchClause(param, catch_body)
+        
+        # 检查是否有finally子句
+        if self.current_token.type == TokenType.KEYWORD and self.current_token.value == 'FINALLY':
+            self.eat(TokenType.KEYWORD)  # 'finally'
+            finally_block = self.compound_statement()
+        
+        # 至少需要catch或finally
+        if catch_clause is None and finally_block is None:
+            self.error("Try statement must have at least a catch or finally clause", self.current_token)
+        
+        return TryStmt(try_block, catch_clause, finally_block)
+    
+    def throw_statement(self):
+        """Parse throw statement / 解析throw语句"""
+        self.eat(TokenType.KEYWORD)  # 'throw'
+        
+        # 解析要抛出的表达式
+        expr = self.expr()
+        self.eat(TokenType.SEMICOLON)
+        
+        return ThrowStmt(expr)
